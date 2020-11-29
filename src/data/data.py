@@ -60,6 +60,7 @@ def prioritize_pref_series(series, teams):
     cleaned_series_list = list(filter(None, list(dict.fromkeys(ordered_series_list))))
     return cleaned_series_list
 
+
 class Data:
     def __init__(self, config):
         """
@@ -162,6 +163,10 @@ class Data:
         # Fetch the playoff data
         self.refresh_playoff()
 
+        # Stanley cup champions
+        self.ScChampions_id = self.check_stanley_cup_champion()
+
+        # Playoff Flag
         self.isPlayoff = False
 
         # Stanley cup round flag
@@ -251,6 +256,9 @@ class Data:
             If the user want's to rotate only his preferred games between the periods and during the day, save those
             only. Lastly, If if not an Off day for the pref teams, reorder the list in order of preferred teams and load
             the first game as the main event.
+
+            TODO:
+                Add the option to start the earliest game in the preferred game list but change to the top one as soon as it start.
         """
         attempts_remaining = 5
         while attempts_remaining > 0:
@@ -421,6 +429,12 @@ class Data:
     #
     # Playoffs
     def refresh_playoff(self):
+        """
+            Currently the series ticker request all the games of a series everytime its asked to load on screen.
+            This create a lot of delay between showing each series. 
+            TODO:
+                Add a refresh function to the Series object instead and trigger a refresh only at specific time in the renderer.(End of a game, new day)
+        """
         attempts_remaining = 5
         while attempts_remaining > 0:
             try:
@@ -448,7 +462,7 @@ class Data:
                         if self.config.seriesticker_preferred_teams_only and self.pref_series:
                             self.series = self.pref_series
                     except AttributeError:
-                        debug.error("The {} Season playoff has to started yet or unavailable".format(self.playoffs.season))
+                        debug.error("The {} Season playoff has not started yet or is unavailable".format(self.playoffs.season))
                         self.isPlayoff = False
                         break
 
@@ -462,9 +476,17 @@ class Data:
                 attempts_remaining -= 1
                 sleep(NETWORK_RETRY_SLEEP_TIME)
 
+    def check_stanley_cup_champion(self):
+        if self.isPlayoff and self.stanleycup_round:
+            for x in range(len(self.current_round.series[0].matchupTeams)):
+                if self.current_round.series[0].matchupTeams[x].seriesRecord.wins >= 4:
+                    return self.current_round.series[0].matchupTeams[x].team.id
+                else:
+                    return False
+
     def series_by_conference():
         """
-            TODO:reorganize the list of series by conference and return the list
+            TODO:reorganize the list of series by conference and return the list. this is to allow the option of showing the preferred conference series.
         """
         pass
 
@@ -508,6 +530,4 @@ class Data:
         # Update standings
         self.refresh_standings()
 
-        # Update Playoff data
-        self.refresh_playoff()
 
