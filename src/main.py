@@ -25,7 +25,7 @@ import os
 
 SCRIPT_NAME = "NHL-LED-SCOREBOARD"
 
-SCRIPT_VERSION = "1.4.1"
+SCRIPT_VERSION = "1.5.4"
 
 
 def run():
@@ -104,14 +104,14 @@ def run():
             debug.error("No valid weather alerts providers selected, skipping alerts feed")
             data.config.weather_show_alerts = False
 
-    if data.config.weather_forecast_enabled:
+    if data.config.weather_forecast_enabled and data.config.weather_enabled:
         wxForecast(data,scheduler)
     #
     # Run check for updates against github on a background thread on a scheduler
     #
     if commandArgs.updatecheck:
         data.UpdateRepo = commandArgs.updaterepo
-        checkupdate = UpdateChecker(data,scheduler)
+        checkupdate = UpdateChecker(data,scheduler,commandArgs.ghtoken)
 
     if data.config.dimmer_enabled:
         dimmer = Dimmer(data, matrix,scheduler)

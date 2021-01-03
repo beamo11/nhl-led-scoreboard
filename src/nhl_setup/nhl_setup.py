@@ -15,7 +15,7 @@ import shutil
 
 from time import sleep
 
-SCRIPT_VERSION = "1.4.0"
+SCRIPT_VERSION = "1.5.0"
 
 TEAMS = ['Avalanche','Blackhawks','Blues','Blue Jackets','Bruins','Canadiens','Canucks','Capitals','Coyotes','Devils','Ducks','Flames','Flyers',
     'Golden Knights','Hurricanes','Islanders','Jets','Kings','Maple Leafs','Lightning','Oilers','Panthers','Penguins','Predators',
@@ -26,7 +26,8 @@ SECTIONS = ['general','preferences','states','boards','sbio']
 STATES = ['off_day','scheduled','intermission','post_game']
 #Note: for boards, the covid19 in config is NOT the same name as the covid_19 python function
 #the boards listed below are what's listed in the config
-BOARDS = ['clock','weather','wxalert','scoreticker','seriesticker','standings','covid19','christmas']
+# These are boards that have configuration.  If your board does not have any config, you don't need to add it
+BOARDS = ['clock','weather','wxalert','scoreticker','seriesticker','standings','covid19']
 SBIO = ['pushbutton','dimmer','screensaver']
 
 class Clock24hValidator(Validator):
@@ -69,7 +70,7 @@ def get_file(path):
 def load_config(confdir,simple=False):
     # Find and return a json file
 
-        filename = ["config.json","config.json.sample"]
+        filename = ["config.json","config.json.sample",".default/config.json.sample"]
         j = {}
 
         jloaded = False
@@ -660,7 +661,7 @@ def standings(default_config,qmark):
             'name' : 'divisions',
             'qmark': qmark,
             'message' : "Select the division to display",
-            'choices' : ['atlantic','metropolitan','central','pacific'],
+            'choices' : ['atlantic','metropolitan','central','pacific','north','west','east'],
             'default' : get_default_value(default_config,['boards','standings','divisions'],"string") or 'atlantic'
         },
         {
@@ -897,7 +898,7 @@ def weather(default_config,qmark):
             'type': 'confirm',
             'name': 'enabled',
             'qmark': qmark,
-            'message': 'Use weather board?',
+            'message': 'Use weather data feed (this is required to get data for the weather and weather alert boards)?',
             'default': get_default_value(default_config,['boards','weather','enabled'],"bool") or True
         }
     ]
@@ -1493,9 +1494,16 @@ def main():
     #Check to see if the user wants to validate an existing config.json against the schema
     #Only from command line
 
-    if args.check:
+    #Change to check on running app every time, if config is not valid, exit.
+
+    #Check for existence of config/.default/firstrun file, if one exists, don't try to validate
+    
+    firstrun = "{0}/.default/firstrun".format(args.confdir)
+    if not os.path.exists(firstrun):
         conffile = "{0}/config.json".format(args.confdir)
         schemafile = "{0}/config.schema.json".format(args.confdir)
+        if not os.path.exists(schemafile):
+            schemafile = "{0}/.default/config.schema.json".format(args.confdir)
 
         confpath = get_file(conffile)
         schemapath = get_file(schemafile)
@@ -1505,6 +1513,11 @@ def main():
             print("Your config.json passes validation and can be used with nhl led scoreboard",GREEN)
         else:
             print("Your config.json fails validation: error: [{0}]".format(msg),RED)
+            sys.exit(0)
+    else:
+        os.remove(firstrun)
+
+    if args.check:
         sys.exit(0)
 
     #Check to see if there was a team name on the command line, if so, create a new config.json from
