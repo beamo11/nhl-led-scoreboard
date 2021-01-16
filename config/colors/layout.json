@@ -1,12 +1,14 @@
 {
   "_default": [255, 255, 255],
   "clock": {
-    "time": [255, 50, 50],
+    "time": [4, 106, 56],
     "date": [255, 255, 255],
-    "meridiem": [255, 255, 255]
+    "meridiem": [0, 32, 91]
   },
   "wx_clock": {
-    "time": [255, 50, 50]
+    "time": [4, 106, 56],
+    "date": [255, 255, 255],
+    "meridiem": [0, 32, 91]
   },
   "scoreboard": {
     "period_final": [255, 0, 0],
@@ -22,27 +24,27 @@
     "board_title":[0, 0, 0]
   },
   "wx_curr_temp": {
-    "temp": [0,255,0],
-    "temp_app": [0,255,0],
-    "temp_app_hi": [255,0,0],
-    "temp_app_lo": [0,0,255],
-    "forecast_temp_hi": [255,0,0],
-    "forecast_temp_lo": [0,0,255],
-    "forecast_hi": [255,0,0],
-    "forecast_lo": [0,0,255]
+    "temp": [255,185,89],
+    "temp_app": [255,183,89],
+    "temp_app_hi": [255,140,101],
+    "temp_app_lo": [121,197,180],
+    "forecast_temp_hi": [183,56,56],
+    "forecast_temp_lo": [90,56,150],
+    "forecast_hi": [183,56,56],
+    "forecast_lo": [90,56,150]
   },
   "wx_curr_wind": {
-    "wind": [255,255,0],
-    "gust": [173,255,47],
-    "pressure": [218,165,32],
-    "visibility": [218,165,32]
+    "wind": [130,255,151],
+    "gust": [0,135125],
+    "pressure": [160,238,255],
+    "visibility": [42,105,62]
   },
   "wx_curr_precip": {
     "precipchance": [0,191,255],
-    "humidity": [0,255,255],
+    "humidity": [13,183,197],
     "preciptype_na": [0,206,235],
-    "pressure": [218,165,32],
-    "dewpoint": [24,252,0]
+    "pressure": [160,238,255],
+    "dewpoint": [9,163,74]
   },
   "wx_alert": {
     "watch_us": [255,165,0],
