@@ -2,34 +2,108 @@ from rgbmatrix import RGBMatrixOptions, graphics
 import collections
 import argparse
 import os
+import diskcache as dc
 import debug
 from datetime import datetime, timezone, time
 import regex
 import math
 import geocoder
+import dbus
+import json
+from iso6709 import Location
 
+uid = int(os.stat("./VERSION").st_uid)
+gid = int(os.stat("./VERSION").st_uid)
+
+# For caching weather and location data
+sb_cache = dc.Cache("/tmp/sb_cache")
+
+def stop_splash_service():
+    sysbus = dbus.SystemBus()
+    systemd1 = sysbus.get_object('org.freedesktop.systemd1',     '/org/freedesktop/systemd1')
+    manager = dbus.Interface(systemd1, 'org.freedesktop.systemd1.Manager')
+    try:
+        job = manager.StopUnit('sb_splash.service', 'fail')
+    except Exception as ex:
+        nosvc = ex
+
+def scheduler_event_listener(event):
+    debug.error(f'Job {event.job_id} raised {event.exception.__class__.__name__}')
+    
 def get_lat_lng(location):
 
-    if len(location) > 0:
+    #Check to see if a location.json is in the config folder
+    reload = False
+    ipfallback = False
+    today = datetime.today()#gets current time
+    latlng = []
+
+    j = {}
     
-        g = geocoder.osm(location)
-            
-        if not g.ok:
-            #debug.error("Unable to find {} with Open Street Map, falling back to IP lookup for location.  Error: {}".format(location,e))
-            # error_message = "Unable to find {} with Open Street Map, falling back to IP lookup for location.".format(location)
-            g = geocoder.ip('me')
-            #debug.info("location is: " + g.city + ","+ g.country + " " + str(g.latlng))
-            message = "Unable to find [{}] with Open Street Map, used IP address to find your location is: ".format(location) + g.city + ","+ g.country + " " + str(g.latlng)
-        else:
-            message = "location is: " + location + " " + str(g.latlng)
-            
+    j_cache, expiration_time = sb_cache.get("location",expire_time=True)
+    if j_cache is not None:
+        j = json.loads(j_cache)
+        # Get the time that the cache was created
+        current_time = datetime.now().timestamp()
+        # Calculate the remaining time in seconds
+        remaining_time_seconds = max(0, current_time - int(expiration_time))
+        remaining_days =  int(remaining_time_seconds/86400)
+        
+        latlng = [j["lat"],j["lng"]]
+        if len(location) > 0:
+            message = "location loaded from cache (saved {} days ago): ".format(remaining_days) + location + " " + str(latlng)
+        else:                
+            message = "location loaded from cache (saved {} days ago): ".format(remaining_days) + j["city"] + ", "+ j["country"] + " " + str(latlng)     
     else:
-        g = geocoder.ip('me')
-        #debug.info("location is: " + g.city + ","+ g.country + " " + str(g.latlng))
-        message = "location is: " + g.city + ","+ g.country + " " + str(g.latlng)
+        # Cache has expired
+        reload = True
+        message = "location loaded from cache has expired, reloading...."
+        
+    if reload:
+        if len(location) > 0:
 
-    return g.latlng,message
+            g = geocoder.osm(location)
 
+            if not g.ok:
+                ipfallback = True
+                message = "Unable to find [{}] with Open Street Map".format(location)
+            else:
+                latlng = g.latlng
+                message = "location is: " + location + " " + str(g.latlng)
+        else:
+            ipfallback = True
+
+        if ipfallback:
+            g = geocoder.ip('me')
+            if g.ok:
+                latlng = g.latlng
+                message = "location is: " + g.city + ","+ g.country + " " + str(g.latlng)
+            else:
+                # Get the location of the timezone from the /usr/share/zoneinfo/zone.tab
+
+                try:
+                    stream=os.popen("cat /usr/share/zoneinfo/zone.tab | grep $(cat /etc/timezone) | awk '{print $2}'")
+                    get_tzlatlng=stream.read().rstrip() + "/"
+                    loc=Location(get_tzlatlng)
+                    latlng = [float(loc.lat.decimal),float(loc.lng.decimal)]
+                except:
+                    #If this hits, your rpi is foobarred and locale and timezone info is missing
+                    #So, we will default to a Tragically Hip song lyric
+                    #At the 100th meridian, where the great plains begin
+                    latlng = [float(67.833333), float(-100)]
+                    
+                g.latlng = latlng
+                message = "Unable to find location with open street maps or IP address, using lat/lon of your timezone, {}".format(str(latlng))
+
+        if g.ok:
+            #Dump the location to a file
+            savefile = json.dumps(g.json, sort_keys=False, indent=4)
+            # Store in cache and expire after 7 days
+            sb_cache.set("location",savefile,expire=604800)
+            
+
+    return latlng,message
+    
 # validate if a string is in 12h format or 24h format
 def timeValidator(timestr):
     #Check 24hr HH:MM
@@ -127,17 +201,24 @@ def led_matrix_options(args):
     options.row_address_type = args.led_row_addr_type
     options.multiplexing = args.led_multiplexing
     options.pwm_bits = args.led_pwm_bits
+    options.scan_mode = args.led_scan_mode
     options.brightness = args.led_brightness
     options.pwm_lsb_nanoseconds = args.led_pwm_lsb_nanoseconds
     options.led_rgb_sequence = args.led_rgb_sequence
     options.panel_type = args.led_panel_type
     options.limit_refresh_rate_hz = args.led_limit_refresh
+
     try:
         options.pixel_mapper_config = args.led_pixel_mapper
     except AttributeError:
         debug.warning("Your compiled RGB Matrix Library is out of date.")
         debug.warning("The --led-pixel-mapper argument will not work until it is updated.")
-    
+
+    try:
+        options.pwm_dither_bits = args.led_pwm_dither_bits
+    except AttributeError:
+        debug.warning("Your compiled RGB Matrix Library is out of date.")
+        debug.warning("The --led-pwm-dither-bits argument will not work until it is updated.")
 
     if args.led_show_refresh:
         options.show_refresh_rate = 1
@@ -166,8 +247,7 @@ def deep_update(source, overrides):
 
 
 def convert_time(utc_dt):
-    local_dt = datetime.strptime(utc_dt, '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone.utc).astimezone(tz=None)
-    return local_dt
+    return utc_dt.replace(tzinfo=timezone.utc).astimezone(tz=None)
 
 
 def is_empty_list(list):
@@ -194,8 +274,7 @@ def center_obj(screen_w, lenght):
     return int((screen_w - lenght)/2)
 
 def convert_date_format(date):
-    d = datetime.strptime(date, '%Y-%m-%d')
-    return d.strftime('%b %d')
+    return date.strftime('%b %d')
 
 def round_normal(n, decimals=0):
     multiplier = 10 ** decimals

@@ -1,9 +1,10 @@
 import sys
+import time
 from datetime import datetime, timedelta
 from data.scoreboard_config import ScoreboardConfig
 from renderer.main import MainRenderer
 from rgbmatrix import RGBMatrix, RGBMatrixOptions
-from utils import args, led_matrix_options
+from utils import args, led_matrix_options, stop_splash_service, scheduler_event_listener, sb_cache
 from data.data import Data
 import threading
 from sbio.dimmer import Dimmer
@@ -16,27 +17,35 @@ from api.weather.owmWeather import owmWxWorker
 from api.weather.ecAlerts import ecWxAlerts
 from api.weather.nwsAlerts import nwsWxAlerts
 from api.weather.wxForecast import wxForecast
-from env_canada import ECData
+import asyncio
+from env_canada import ECWeather
 from renderer.matrix import Matrix
 from update_checker import UpdateChecker
+import tzlocal
+from apscheduler.events import EVENT_ALL, EVENT_JOB_ERROR, EVENT_JOB_MISSED
 from apscheduler.schedulers.background import BackgroundScheduler
+from renderer.loading_screen import Loading
 import debug
 import os
+# If you want real fancy stack trace dumps, uncomment these two lines
+#from rich.traceback import install
+#install(show_locals=True) 
 
 SCRIPT_NAME = "NHL-LED-SCOREBOARD"
 
-SCRIPT_VERSION = "1.5.5"
+SCRIPT_VERSION = "1.8.2"
 
 
 def run():
+    # Kill the splash screen if active
+    stop_splash_service()
+
     # Get supplied command line arguments
     commandArgs = args()
 
     if commandArgs.terminal_mode and sys.stdin.isatty():
         height, width = os.popen('stty size', 'r').read().split()
-        termMatrix = TermMatrix()
-        termMatrix.width = int(width)
-        termMatrix.height = int(height)
+        termMatrix = TermMatrix(int(width), int(height))
         matrix = Matrix(termMatrix)
     else:
         # Check for led configuration arguments
@@ -46,9 +55,15 @@ def run():
         # Initialize the matrix
         matrix = Matrix(RGBMatrix(options = matrixOptions))
 
+     #Riff to add loading screen here
+    loading = Loading(matrix)
+    loading.render()
+
     # Read scoreboard options from config.json if it exists
     config = ScoreboardConfig("config", commandArgs, (matrix.width, matrix.height))
 
+    # This data will get passed throughout the entirety of this program.
+    # It initializes all sorts of things like current season, teams, helper functions
     data = Data(config)
 
     #If we pass the logging arguments on command line, override what's in the config.json, else use what's in config.json (color will always be false in config.json)
@@ -76,7 +91,8 @@ def run():
 
 
     # Start task scheduler, used for UpdateChecker and screensaver, forecast, dimmer and weather
-    scheduler = BackgroundScheduler()
+    scheduler = BackgroundScheduler(timezone=str(tzlocal.get_localzone()), job_defaults={'misfire_grace_time': None})
+    scheduler.add_listener(scheduler_event_listener, EVENT_JOB_MISSED | EVENT_JOB_ERROR)
     scheduler.start()
 
     # Any tasks that are scheduled go below this line
@@ -87,11 +103,12 @@ def run():
     #Create EC data feed handler
     if data.config.weather_enabled or data.config.wxalert_show_alerts:
         if data.config.weather_data_feed.lower() == "ec" or data.config.wxalert_alert_feed.lower() == "ec":
+            data.ecData = ECWeather(coordinates=(tuple(data.latlng)))
+            
             try:
-                data.ecData = ECData(coordinates=(data.latlng))
+                asyncio.run(data.ecData.update())
             except Exception as e:
-                debug.error("Unable to connect to EC, try running again in a few minutes")
-                sys.exit(0)
+                debug.error("Unable to connect to EC .. will try on next refresh : {}".format(e))
 
     if data.config.weather_enabled:
         if data.config.weather_data_feed.lower() == "ec":
@@ -138,7 +155,8 @@ def run():
         pushbuttonThread = threading.Thread(target=pushbutton.run, args=())
         pushbuttonThread.daemon = True
         pushbuttonThread.start()
-
+    
+    # Then the main everything runs here.
     MainRenderer(matrix, data, sleepEvent).render()
 
 
@@ -148,4 +166,5 @@ if __name__ == "__main__":
 
     except KeyboardInterrupt:
         print("Exiting NHL-LED-SCOREBOARD\n")
+        sb_cache.close()
         sys.exit(0)

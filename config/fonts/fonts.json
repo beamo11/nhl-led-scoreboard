@@ -1,6 +1,6 @@
 {
   "_default": {
-    "file": "04b24.otf",
+    "file": "04B_24__.TTF",
     "size": 8
   },
   "medium": {
@@ -8,11 +8,11 @@
     "size": 16
   },
   "medium_2": {
-    "file": "04b24.otf",
+    "file": "04B_24__.TTF",
     "size": 16
   },
   "large": {
-    "file": "04b24.otf",
+    "file": "04B_24__.TTF",
     "size": 24
   },
   "wxicons_full": {
@@ -42,6 +42,10 @@
   "wx_alert_sm": {
     "file": "press2p.ttf",
     "size": 9
+  },
+  "wx_alert_lg": {
+    "file": "VGA.ttf",
+    "size": 16
   }
 
 }

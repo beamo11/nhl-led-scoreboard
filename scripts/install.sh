@@ -1,70 +1,105 @@
-#!/bin/bash
+#! /bin/bash
 
 # Make script work regardless of where it is run from
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-cd "${DIR}/.."
+cd "${DIR}/.." || exit
 
-# Install the latest version of pip3
-sudo apt-get update
-sudo apt install git python3-pip
+# Don't run as root user
+if [ $(id -u) -eq 0 ]; then
+  tput bold; echo "$(tput setaf 9)You do not need to run this script using sudo, it will handle sudo as required$(tput setaf 9)" ; tput sgr0
+  exit 1
+fi
 
-# Install the latest version of Python 3
-sudo apt-get install python3-dev
+deb_ver () {
+  ver=$(cut -d . -f 1 < /etc/debian_version)
+  echo $ver
+}
 
-sudo apt-get install python3-setuptools
-sudo apt-get install build-essential
+deb_name () {
+    . /etc/os-release; echo "$PRETTY_NAME"
+}	
 
-# Pull submodule and ignore changes from script
-git submodule update --init --recursive
-git config submodule.matrix.ignore all
+py_ver () {
+  pyver="$(command -p python3 -V | sed 's/Python //g')"
+  echo $pyver
+}
 
-sudo apt-get -y install python3-dev python3-pillow
+show_virtual_env() {
+  if [ -n "$VIRTUAL_ENV" ]; then
+    echo "VENV name: $(basename $VIRTUAL_ENV)"
+  else
+    echo "No VENV installed"
+  fi
+}
 
-cd submodules/matrix || exit
-echo "Running rgbmatrix installation..."
+py_loc () {
+  pyloc="$(command -v python3)"
+  echo $pyloc
+}
 
-make build-python PYTHON=$(which python3)
-sudo make install-python PYTHON=$(which python3)
-cd bindings
-sudo pip3 install --ignore-installed -e python/
+get_model() {
+	pimodel=$(tr -d '\0' </proc/device-tree/model)
+	echo $pimodel
+}
 
-cd ../../../
+calc_wt_size() {
+  # NOTE: it's tempting to redirect stderr to /dev/null, so supress error
+  # output from tput. However in this case, tput detects neither stdout or
+  # stderr is a tty and so only gives default 80, 24 values
+  WT_HEIGHT=18
+  WT_WIDTH=$(tput cols)
 
-echo "Installing required dependencies. This may take some time (10-20 minutes-ish)..."
-git reset --hard
-git fetch origin --prune
-git pull
+  if [ -z "$WT_WIDTH" ] || [ "$WT_WIDTH" -lt 60 ]; then
+    WT_WIDTH=80
+  fi
+  if [ "$WT_WIDTH" -gt 178 ]; then
+    WT_WIDTH=120
+  fi
+  WT_MENU_HEIGHT=$((WT_HEIGHT - 7))
+}
 
-sudo pip3 install requests 
-sudo pip3 install regex
+do_install() {
+	scripts/sbtools/sb-init
+  exit 0
+}
 
-# For dimmer
-sudo pip3 install geocoder python_tsl2591 ephem
+do_upgrade() {
+  scripts/sbtools/sb-upgrade
+  exit 0
+}
 
-# For weather
-sudo pip3 uninstall numpy
-sudo apt-get install python3-numpy
-sudo apt-get install libatlas3-base
-sudo pip3 install env-canada==0.0.35
-sudo pip3 install --upgrade pyowm
-sudo pip3 install noaa_sdk fastjsonschema
-sudo apt-get install libatlas-base-dev
+do_help() {
+ whiptail --msgbox "\
+This tool provides a straightforward way of doing initial
+install of the NHL LED Scoreboard or an Upgrade of an existing installation\
+" 20 70 1
+  return 0
+}
 
-# For update checker
-sudo pip3 install apscheduler
-sudo pip3 install lastversion
+calc_wt_size
 
-# For push button
-sudo apt-get -y install python3-gpiozero
+backtitle="$(get_model) [$(deb_name)] [Python: $(py_loc) V$(py_ver) $(show_virtual_env)]"
 
-# For terminal mode
-sudo apt-get install libatlas-base-dev
-sudo pip3 install numpy
+while true; do
 
-# For svgs
-sudo apt-get -y install python3-cairosvg
-sudo apt-get -y install libraqm-dev
+        FUN=$(whiptail --title "NHL LED Scoreboard Install/Upgrade Tool" --backtitle "$backtitle" --menu "Options" $WT_HEIGHT $WT_WIDTH $WT_MENU_HEIGHT --cancel-button Finish --ok-button Select \
+        "1 New Install" "Use this if this is your first time installing" \
+        "2 Upgrade" "Use this if you are upgrading" \
+        "3 Help" "Show help for this tool" \
+        3>&1 1>&2 2>&3)
 
-make
-echo "If you didn't see any errors above, everything should be installed!"
-echo "Installation complete! Play around with the examples in nhl-led-scoreboard/submodules/matrix/bindings/python/samples to make sure your matrix is working."
+	RET=$?
+
+	if [ $RET -eq 1 ]; then
+           exit 0
+        elif [ $RET -eq 0 ]; then
+          case "$FUN" in
+            1\ *) do_install ;;
+            2\ *) do_upgrade ;;
+            3\ *) do_help ;;
+            *) whiptail --msgbox "Programmer error: unrecognized option" 20 60 1 ;;
+          esac || whiptail --msgbox "There was an error running option $FUN" 20 60 1
+        else
+      exit 1
+    fi
+done
